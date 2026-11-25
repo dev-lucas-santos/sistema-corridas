@@ -2,6 +2,10 @@
 
 Next.js 16 + TypeScript + Tailwind + Supabase.
 
+### Apresentação em vídeo
+
+[Assista à apresentação do sistema](docs/apresentacao-sistema.mp4) — vídeo narrado de aproximadamente 2 min 48 s.
+
 ### Acesso à base
 
 Tela de entrada e cadastro da equipe:
