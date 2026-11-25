@@ -9,7 +9,7 @@ function urlBase64ToUint8Array(b64: string) {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
-type St = "loading" | "unsupported" | "denied" | "off" | "on";
+type St = "loading" | "unconfigured" | "unsupported" | "denied" | "off" | "on";
 
 export function PushToggle() {
   const [state, setState] = useState<St>("loading");
@@ -17,7 +17,11 @@ export function PushToggle() {
   const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
   useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !vapid) {
+    if (!vapid) {
+      Promise.resolve().then(() => setState("unconfigured"));
+      return;
+    }
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       Promise.resolve().then(() => setState("unsupported"));
       return;
     }
@@ -57,11 +61,12 @@ export function PushToggle() {
   }
 
   if (state === "loading") return null;
+  if (state === "unconfigured") return <p className="text-sm text-slate-500">A base ainda não configurou as notificações.</p>;
   if (state === "unsupported") return <p className="text-sm text-slate-500">Notificações não disponíveis neste aparelho. No iPhone, instale o app na tela inicial primeiro.</p>;
   if (state === "denied") return <p className="text-sm text-amber-700 dark:text-amber-400">Notificações bloqueadas. Libere nas configurações do navegador.</p>;
   return state === "on" ? (
     <button className="btn-secondary w-full" onClick={disable} disabled={busy}><BellOff size={18} /> Desativar notificações</button>
   ) : (
-    <button className="btn-primary w-full" onClick={enable} disabled={busy}><Bell size={18} /> Ativar notificações de corridas</button>
+    <button className="btn-primary w-full" onClick={enable} disabled={busy}><Bell size={18} /> Ativar notificações</button>
   );
 }

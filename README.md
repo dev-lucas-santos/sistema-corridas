@@ -2,6 +2,18 @@
 
 Next.js 16 + TypeScript + Tailwind + Supabase.
 
+### Acesso à base
+
+Tela de entrada e cadastro da equipe:
+
+<img src="docs/imagens/base-login.png" alt="Tela de entrada da base com campos de e-mail e senha" width="360">
+
+### Painel da base
+
+Visão geral de indicadores, corridas do dia e motoristas ativos:
+
+<img src="docs/imagens/base-painel.png" alt="Painel administrativo da base de corridas" width="900">
+
 ## Configuração
 
 1. Crie um projeto em https://supabase.com.
@@ -41,6 +53,55 @@ npm test
 - Motorista aceita/recusa (com motivo)/inicia/finaliza; o painel da base muda sem recarregar.
 - Botões de ligar, WhatsApp, Google Maps e Waze no card da corrida confirmada.
 - Deixe uma corrida enviada sem resposta por mais de 10 min (`settings.driver_response_timeout_minutes`): aparece o alerta amarelo no topo do painel.
+
+### Portal do motorista e mensagens
+
+- Aplique as migrações anteriores em ordem e, em seguida, `supabase/migrations/0011_driver_portal.sql`, `0012_driver_signup.sql` e `0013_driver_phone.sql`. A `0011` habilita vínculo, conversas e regras de acesso; a `0012` permite cadastro de motorista e mantém novos operadores inativos até aprovação.
+- **Antes de liberar novos cadastros**, aplique e valide as migrações: a `0010` sozinha cria operadores ativos. No Supabase Authentication, mantenha **Confirm email** habilitado. A chave `SUPABASE_SERVICE_ROLE_KEY` é necessária no servidor para o limite de cadastros.
+- Para testar no próprio computador com o template padrão, use `http://localhost:3000` como Site URL e adicione `http://localhost:3000/auth/callback?next=/motorista` às Redirect URLs. Abra o link de confirmação no mesmo navegador do cadastro; se isso não for possível, confirme o e-mail e entre pela tela de login. O serviço de e-mail padrão do Supabase envia apenas para endereços autorizados da equipe do projeto e possui limite reduzido; configure SMTP próprio para outros destinatários.
+- Para acesso pelo celular ou uso público, configure HTTPS público, Site URL e Redirect URLs correspondentes e SMTP próprio. Para usar o fluxo alternativo por token hash, configure o template **Confirm signup** com `<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}">Confirmar e-mail</a>`. Teste a entrega e a confirmação antes de disponibilizar o sistema.
+- O motorista usa **Cadastre-se** em `/motorista/login` e confirma o e-mail recebido. Ele pode entrar após a confirmação, mas não recebe corridas até o administrador vincular sua conta confirmada em **Motoristas → editar motorista → Acesso ao aplicativo**. O vínculo altera o papel para motorista; não escolha uma conta que precise continuar sendo operador.
+- Novos operadores continuam precisando de ativação pelo administrador em `/usuarios`. Aprovação de operadores por e-mail ainda não foi implementada.
+- O motorista entra em `/motorista/login`. Em um endereço HTTPS público, pode adicionar o aplicativo à tela inicial pelo navegador. `localhost` permite apenas teste no próprio computador.
+- A tela inicial mostra ofertas e corridas em andamento; **Histórico** separa realizadas e canceladas. O motorista vê somente suas próprias corridas.
+- Cada envio de corrida tem uma conversa separada: o motorista toca em **Mensagens com a base** e a equipe responde em **Mensagens**, ou pelo histórico de envios da corrida. A troca de motorista cria uma conversa diferente.
+- As conversas atualizam enquanto a tela está aberta. Push para novas corridas e mensagens da base depende das chaves VAPID, de HTTPS, de suporte do aparelho e da autorização do motorista; não substitui a consulta ao aplicativo.
+- Aplique também `supabase/migrations/0015_driver_general_messages.sql` para habilitar **Mensagens com a base** sem depender de uma corrida, inclusive antes do vínculo. A equipe responde em **Mensagens → Conversas gerais**. A conversa é compartilhada com a equipe, não com outros motoristas.
+- O login do app aceita somente contas de motorista. Abas no mesmo navegador compartilham a sessão; para usar simultaneamente uma conta de motorista e outra da base, utilize navegadores ou perfis separados.
+- Em desenvolvimento, `http://localhost:3000/motorista/demo` mostra uma demonstração sem login e com dados fictícios. As interações ficam apenas na tela e não enviam dados à base; a demonstração não está disponível em produção.
+- Após aceitar uma corrida, o motorista pode abrir um mapa da posição atual até o destino. Configure `OPENROUTESERVICE_API_KEY` no servidor com uma chave de https://openrouteservice.org/ e `SUPABASE_SERVICE_ROLE_KEY` para o limite de consultas. Configure também `NEXT_PUBLIC_MAP_TILE_URL` com a URL HTTPS de um fornecedor de imagens de mapa baseado em OSM que permita esse uso, contendo `{z}`, `{x}` e `{y}`, e `NEXT_PUBLIC_MAP_TILE_ATTRIBUTION` com a atribuição adicional exigida pelo fornecedor. As variáveis `NEXT_PUBLIC_` são públicas: use apenas chaves próprias para navegador. Reinicie o servidor e refaça o build após alterá-las. Sem configuração, use os links Google Maps ou Waze. Geolocalização no celular exige HTTPS e permissão do motorista; `localhost` permite testes no próprio computador.
+- O endereço do destino e a localização são enviados ao openrouteservice para calcular a rota, e as imagens são carregadas do fornecedor configurado. Informe os motoristas e observe as políticas de privacidade, uso e limites dos provedores. A posição é atualizada apenas com o mapa aberto; a linha não é recalculada automaticamente, não há navegação por voz e o endereço encontrado deve ser conferido. A demonstração usa imagens públicas do OpenStreetMap e mostra apenas uma linha ilustrativa, não uma rota real.
+
+#### Telas do motorista
+
+**Cadastro:** a conta precisa de confirmação de e-mail e vínculo com a base para receber corridas.
+
+<img src="docs/imagens/motorista-cadastro.png" alt="Formulário de cadastro do motorista" width="360">
+
+As telas abaixo mostram a demonstração local com dados fictícios; nenhuma mensagem ou alteração é enviada à base.
+
+**Corridas:** oferta de exemplo no painel do motorista.
+
+<img src="docs/imagens/motorista-corridas.png" alt="Painel de demonstração com uma oferta de corrida fictícia" width="360">
+
+**Mapa:** exemplo após aceitar uma corrida. A linha exibida é ilustrativa, não uma rota real.
+
+<img src="docs/imagens/motorista-mapa.png" alt="Mapa ilustrativo de uma corrida fictícia aceita" width="360">
+
+**Mensagens com a base:** conversa de exemplo.
+
+<img src="docs/imagens/motorista-mensagens.png" alt="Demonstração de conversa do motorista com a base" width="360">
+
+**Histórico:** filtro de corridas realizadas e canceladas.
+
+<img src="docs/imagens/motorista-historico.png" alt="Histórico de corridas fictícias com filtros para realizadas e canceladas" width="360">
+
+### Lista de motoristas e confirmação de WhatsApp
+
+- Aplique também `supabase/migrations/0013_driver_phone.sql` depois da `0012`. Em **Motoristas**, a equipe consulta nome, e-mail e telefone dos ativos. Somente administradores podem cadastrar, inativar ou reativar motoristas. Inativar preserva o histórico e impede novas atribuições e o acesso às corridas; confira e reatribua manualmente as corridas que estiverem em andamento.
+- Em **Meu WhatsApp**, o motorista com e-mail confirmado informa um celular brasileiro com DDD e confirma o código recebido. A opção também aparece antes do vínculo com a base. O número confirmado é atualizado no cadastro vinculado; se o vínculo acontecer depois, ele é copiado ao vincular. O e-mail do perfil preenche o cadastro apenas quando estiver vazio.
+- Para enviar códigos de verdade, configure no servidor `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_API_VERSION`, `WHATSAPP_AUTH_TEMPLATE`, `WHATSAPP_AUTH_LANGUAGE` e `DRIVER_PHONE_OTP_SECRET` (segredo aleatório exclusivo de pelo menos 32 caracteres), além de `SUPABASE_SERVICE_ROLE_KEY`. Na Meta, use um número empresarial e um template de autenticação aprovado com botão **copiar código**, prazo de 10 minutos e idioma igual ao configurado. O envio pode ter custo; obtenha o consentimento do motorista e teste com um número autorizado. A aceitação pela API não garante a entrega da mensagem.
+- Códigos expiram após 10 minutos e permitem até cinco tentativas; novos envios têm limite por conta e por número. Sem migração ou configuração a confirmação não funciona e um número anterior permanece inalterado.
 
 ## Fase 3 — Financeiro
 
@@ -95,10 +156,21 @@ Rode a migração `0007_inbound.sql`.
 
 Rode a migração `0008_hardening.sql`.
 
-## Cadastro liberado
-Rode `0009` e depois `0010_signup_open.sql`: quem cria conta na aba "Criar cadastro" já entra direto como operador, sem aprovação. O admin continua podendo desativar usuários em `/usuarios`.
-Rode a migração `0009_signup_approval.sql`. A aba "Criar cadastro" na tela de login cria o usuário inativo; o admin aprova (e define o papel operador/admin) em `/usuarios`. O login valida e-mail, senha e se o perfil está ativo. Usuários criados manualmente nascem inativos: ative-os em `/usuarios` ou via SQL (o primeiro admin precisa ser via SQL).
+## Aprovação de operadores
+As migrações `0009_signup_approval.sql` e `0010_signup_open.sql` são históricas. Após aplicar também a `0012_driver_signup.sql`, novos operadores são criados inativos e o administrador os aprova em `/usuarios`. O primeiro administrador precisa ser ativado via SQL.
 
+- A área **Administrador** (`/administrador`) reúne a aprovação de usuários e atalhos administrativos. As aprovações atualizam o banco e são auditadas. Contas desativadas aparecem junto com novos cadastros inativos, pois o banco não distingue essas situações.
+- A liberação por senha compartilhada é opcional e deve ser ativada após preparar o servidor e aplicar `0014_admin_session.sql`. Com ela ativa, qualquer operador ou administrador ativo pode liberar suas funções administrativas até sair da conta; motoristas não podem. A liberação vale somente para a sessão autenticada e é registrada na auditoria. A senha é compartilhada, portanto quem a conhece pode conceder privilégios e alterar dados sensíveis. Uma senha curta ou previsível é insegura mesmo com limites de tentativas; use uma senha forte antes de publicar o sistema.
+- No servidor, configure `SUPABASE_SERVICE_ROLE_KEY` e `ADMIN_ACCESS_PASSWORD_HASH`. Para gerar o hash no PowerShell, sem colocar a senha no código ou no histórico de comandos:
+
+```powershell
+$env:SENHA_ADMIN_TEMP = [System.Net.NetworkCredential]::new('', (Read-Host 'Senha administrativa' -AsSecureString)).Password
+node -e "const c=require('node:crypto'),s=c.randomBytes(16);console.log(['scrypt',s.toString('hex'),c.scryptSync(process.env.SENHA_ADMIN_TEMP,s,32).toString('hex')].join(':'))"
+Remove-Item Env:\SENHA_ADMIN_TEMP
+```
+
+  Guarde o resultado como segredo em `ADMIN_ACCESS_PASSWORD_HASH` (não no repositório). Faça backup, aplique as migrações anteriores em ordem e depois `0014_admin_session.sql`; configure `ADMIN_SESSION_ACCESS_ENABLED=1` e reinicie a aplicação imediatamente. A migração altera a autorização no banco: até ativar a aplicação configurada, funções administrativas ficarão bloqueadas. Com a opção desativada e antes da migração, permanece a regra anterior baseada no papel de administrador.
+- Ao trocar a senha compartilhada, atualize o hash em todas as instâncias e reinicie-as. Para revogar sessões já liberadas, execute `delete from public.admin_access_sessions;` no SQL Editor; sem isso elas continuam liberadas até o usuário sair. O cadastro público e o HTTPS têm suas próprias pendências descritas acima.
 - **Configurações** (admin): prazo de resposta do motorista (1 a 240 min). A alteração é auditada.
 - **Auditoria** (admin): quem fez o quê e quando, com filtro por tabela e paginação; mostra os campos alterados.
 - **Cache do painel**: os números do painel ficam em cache por 30 segundos (por perfil). O RLS continua valendo.

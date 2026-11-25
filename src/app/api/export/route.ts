@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { getProfile } from "@/lib/auth";
+import { getProfile, hasAdminAccess } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { buildWorkbook, fetchRides } from "@/lib/reports/data";
 import { HEADERS, rideToRow, toCsv } from "@/lib/reports/rows";
@@ -15,7 +15,7 @@ const schema = z.object({
 
 export async function GET(req: NextRequest) {
   const profile = await getProfile();
-  if (!profile?.active || profile.role !== "admin") return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+  if (!profile?.active || profile.role === "driver" || !(await hasAdminAccess())) return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   const parsed = schema.safeParse(Object.fromEntries([...req.nextUrl.searchParams].filter(([, v]) => v !== "")));
   if (!parsed.success) return NextResponse.json({ error: "Parâmetros inválidos" }, { status: 400 });
   const { formato, from, to, driver, client } = parsed.data;

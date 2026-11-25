@@ -9,8 +9,8 @@ import { formatDate } from "@/lib/dates";
 
 export default async function MeuFinanceiro() {
   const p = await getProfile();
-  if (!p) redirect("/login");
-  if (p.role !== "driver") redirect("/painel");
+  if (!p || !p.active) redirect("/motorista/login");
+  if (p.role !== "driver") redirect("/motorista/login?conta=equipe");
   const supabase = await createClient();
   const [{ data: open }, { data: closings }] = await Promise.all([
     supabase.from("payments").select("amount_cents").is("closing_id", null).limit(1000),

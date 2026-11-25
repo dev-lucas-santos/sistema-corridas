@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/auth";
+import { hasAdminAccess, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/sidebar";
 import { GlobalSearch } from "@/components/global-search";
@@ -11,10 +11,11 @@ const RT_TABLES = ["rides", "drivers", "ride_assignments"];
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   const [profile, { data: overdue }] = await Promise.all([requireStaff(), supabase.rpc("overdue_assignments")]);
+  const adminAccess = await hasAdminAccess();
   return (
     <div className="min-h-screen md:flex">
       <RealtimeRefresh tables={RT_TABLES} poll={60000} />
-      <Sidebar name={profile.full_name || profile.email || ""} role={profile.role} />
+      <Sidebar name={profile.full_name || profile.email || ""} role={profile.role} adminAccess={adminAccess} />
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 p-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
           <GlobalSearch />

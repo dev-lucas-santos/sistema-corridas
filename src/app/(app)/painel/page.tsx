@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader, StatusBadge, AvailabilityBadge } from "@/components/common";
 import { formatBRL } from "@/lib/money";
 import { formatDateTime } from "@/lib/dates";
-import { getProfile } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/auth";
 import { RIDE_STATUS } from "@/lib/labels";
 
 type Stats = {
@@ -13,10 +13,10 @@ type Stats = {
 };
 
 export default async function Painel() {
-  const profile = await getProfile();
+  const adminAccess = await hasAdminAccess();
   const supabase = await createClient();
   // Cache de 30s por perfil: o RLS torna o resultado igual para todos do mesmo papel
-  const stats = await unstable_cache(async () => (await supabase.rpc("dashboard_stats")).data, ["dashboard_stats", profile?.role ?? "none"], { revalidate: 30 })();
+  const stats = await unstable_cache(async () => (await supabase.rpc("dashboard_stats")).data, ["dashboard_stats", adminAccess ? "admin" : "staff"], { revalidate: 30 })();
   const [{ data: pending }, { data: drivers }] = await Promise.all([
     supabase.from("rides").select("id, code, passenger_name, origin, scheduled_at").eq("status", "pending").is("driver_id", null).order("scheduled_at").limit(10),
     supabase.from("drivers").select("id, full_name, availability").eq("active", true).neq("availability", "offline").order("full_name").limit(20),
@@ -36,7 +36,7 @@ export default async function Painel() {
         {card("Faturado no mês", formatBRL(s.revenue_month))}
         {card("A pagar aos motoristas (mês)", formatBRL(s.payout_month))}
         {card("Margem da base (mês)", formatBRL(s.revenue_month - s.payout_month), "text-green-600")}
-        {profile?.role === "admin" && card("Em aberto a pagar (total)", formatBRL(s.payable_cents), "text-amber-600")}
+        {adminAccess && card("Em aberto a pagar (total)", formatBRL(s.payable_cents), "text-amber-600")}
       </div>
       <h2 className="mb-2 mt-6 font-semibold">Corridas de hoje por status</h2>
       <div className="flex flex-wrap gap-3">

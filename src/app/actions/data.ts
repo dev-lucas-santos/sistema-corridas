@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { sendPushToUser } from "@/lib/push";
 import { createClient } from "@/lib/supabase/server";
@@ -14,6 +15,26 @@ import type { FormState } from "./auth";
 const opt = (s: z.ZodString) => z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v), s.nullable());
 const dbError = (e: { code?: string; message: string }): FormState =>
   ({ error: e.code === "23505" ? "Já existe um registro com esses dados (ex.: CNPJ duplicado)." : e.code === "42501" ? "Você não tem permissão para esta ação." : e.message });
+
+async function queueRidePush(supabase: SupabaseClient, driverId: string, rideId: string) {
+  const [{ data: driver, error: driverError }, { data: ride, error: rideError }] = await Promise.all([
+    supabase.from("drivers").select("profile_id").eq("id", driverId).single(),
+    supabase.from("rides").select("origin, scheduled_at").eq("id", rideId).single(),
+  ]);
+  if (driverError || rideError) {
+    console.error("Não foi possível preparar a notificação da corrida", driverError?.message ?? rideError?.message);
+    return;
+  }
+  if (driver?.profile_id && ride) {
+    const userId = driver.profile_id;
+    after(() => sendPushToUser(userId, {
+      title: "Nova corrida",
+      body: `${formatDateTime(ride.scheduled_at)} · ${ride.origin}`,
+      url: "/motorista",
+      tag: `ride-${rideId}`,
+    }));
+  }
+}
 
 // ===== Clientes =====
 const clientSchema = z.object({
@@ -76,6 +97,33 @@ export async function saveDriver(_: FormState, fd: FormData): Promise<FormState>
   redirect("/motoristas");
 }
 
+export async function linkDriverProfile(_: FormState, fd: FormData): Promise<FormState> {
+  await requireAdmin();
+  const parsed = z.object({ driver_id: z.string().uuid(), profile_id: z.string().uuid("Escolha uma conta") }).safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const { error } = await (await createClient()).rpc("link_driver_profile", {
+    p_driver: parsed.data.driver_id, p_profile: parsed.data.profile_id,
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/motoristas/${parsed.data.driver_id}`);
+  return { ok: "Acesso vinculado ao motorista." };
+}
+
+export async function setDriverActive(_: FormState, fd: FormData): Promise<FormState> {
+  await requireAdmin();
+  const parsed = z.object({ id: z.string().uuid(), active: z.enum(["true", "false"]) }).safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: "Dados do motorista inválidos." };
+  const active = parsed.data.active === "true";
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("drivers").update({ active, ...(active ? {} : { availability: "offline" }) })
+    .eq("id", parsed.data.id).select("id").maybeSingle();
+  if (error) return dbError(error);
+  if (!data) return { error: "Motorista não encontrado." };
+  revalidatePath("/motoristas");
+  revalidatePath("/painel");
+  return { ok: active ? "Motorista reativado." : "Motorista inativado. Verifique as corridas atribuídas a ele." };
+}
+
 // ===== Corridas =====
 const rideSchema = z.object({
   passenger_name: z.string().trim().min(2, "Informe o nome do passageiro"),
@@ -128,6 +176,7 @@ export async function saveRide(_: FormState, fd: FormData): Promise<FormState> {
     if (ride?.driver_id !== driver_id) {
       const { error } = await supabase.rpc("assign_ride", { p_ride: rideId, p_driver: driver_id });
       if (error) return { error: error.message };
+      await queueRidePush(supabase, driver_id, rideId!);
     }
   }
   revalidatePath("/corridas");
@@ -141,17 +190,7 @@ export async function assignRide(_: FormState, fd: FormData): Promise<FormState>
   const supabase = await createClient();
   const { error } = await supabase.rpc("assign_ride", { p_ride: parsed.data.ride_id, p_driver: parsed.data.driver_id });
   if (error) return { error: error.message };
-  const { data: drv } = await supabase.from("drivers").select("profile_id").eq("id", parsed.data.driver_id).single();
-  const { data: ride } = await supabase.from("rides").select("origin, scheduled_at").eq("id", parsed.data.ride_id).single();
-  if (drv?.profile_id && ride) {
-    const userId = drv.profile_id;
-    after(() => sendPushToUser(userId, {
-      title: "Nova corrida",
-      body: `${formatDateTime(ride.scheduled_at)} · ${ride.origin}`,
-      url: "/motorista",
-      tag: `ride-${parsed.data.ride_id}`,
-    }));
-  }
+  await queueRidePush(supabase, parsed.data.driver_id, parsed.data.ride_id);
   revalidatePath(`/corridas/${parsed.data.ride_id}`);
   return { ok: "Corrida enviada ao motorista." };
 }

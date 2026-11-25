@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/auth";
 import { PageHeader, Pagination, AvailabilityBadge } from "@/components/common";
 import { setAvailability } from "@/app/actions/data";
+import { setDriverActive } from "@/app/actions/data";
+import { ActionForm } from "@/components/action-form";
 
 const PAGE_SIZE = 20;
 
@@ -10,45 +12,56 @@ export default async function MotoristasPage({ searchParams }: PageProps<"/motor
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q.trim().replace(/[,()%]/g, " ") : "";
   const page = Math.max(1, Number(sp.page) || 1);
-  const profile = await getProfile();
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = await hasAdminAccess();
+  const inactive = isAdmin && sp.status === "inativos";
   const supabase = await createClient();
-  let query = supabase.from("drivers").select("id, full_name, phone, vehicle_plate, vehicle_model, availability, active", { count: "exact" }).order("full_name");
-  if (q) query = query.or(`full_name.ilike.%${q}%,phone.ilike.%${q}%,vehicle_plate.ilike.%${q}%`);
-  const { data, count } = await query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+  let query = supabase.from("drivers").select("id, full_name, email, phone, vehicle_plate, vehicle_model, availability, active", { count: "exact" }).eq("active", !inactive).order("full_name");
+  if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%,vehicle_plate.ilike.%${q}%`);
+  const { data, count, error } = await query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
   return (
     <>
       <PageHeader title="Motoristas">
-        <form className="flex gap-2"><input name="q" defaultValue={q} placeholder="Buscar..." className="input w-56" /><button className="btn-secondary">Buscar</button></form>
+        <form className="flex gap-2">{inactive && <input type="hidden" name="status" value="inativos" />}<input name="q" defaultValue={q} placeholder="Buscar..." className="input w-56" /><button className="btn-secondary">Buscar</button></form>
         {isAdmin && <Link href="/motoristas/novo" className="btn-primary">+ Novo motorista</Link>}
       </PageHeader>
+      <nav className="mb-4 flex gap-2" aria-label="Lista de motoristas">
+        <Link href="/motoristas" className={!inactive ? "btn-primary" : "btn-secondary"}>Ativos</Link>
+        {isAdmin && <Link href="/motoristas?status=inativos" className={inactive ? "btn-primary" : "btn-secondary"}>Inativos</Link>}
+      </nav>
+      {error && <p role="alert" className="card text-red-600">Não foi possível carregar os motoristas.</p>}
       <div className="card overflow-x-auto p-0">
         <table className="w-full">
-          <thead><tr><th className="th">Nome</th><th className="th">Telefone</th><th className="th">Veículo</th><th className="th">Situação</th></tr></thead>
+          <thead><tr><th className="th">Nome</th><th className="th">E-mail</th><th className="th">Telefone</th><th className="th">Veículo</th><th className="th">Situação</th>{isAdmin && <th className="th">Ações</th>}</tr></thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {data?.map((d) => (
               <tr key={d.id}>
                 <td className="td font-medium">{isAdmin ? <Link href={`/motoristas/${d.id}`} className="text-blue-600 hover:underline">{d.full_name}</Link> : d.full_name}</td>
+                <td className="td">{d.email ?? "—"}</td>
                 <td className="td">{d.phone ?? "—"}</td>
                 <td className="td">{d.vehicle_model ?? "—"} {d.vehicle_plate && `· ${d.vehicle_plate}`}</td>
                 <td className="td">
-                  <form action={setAvailability} className="flex items-center gap-2">
+                  {inactive ? "Inativo" : <form action={setAvailability} className="flex items-center gap-2">
                     <input type="hidden" name="driver_id" value={d.id} />
                     <AvailabilityBadge value={d.availability} />
                     <select name="value" defaultValue={d.availability} className="rounded border border-slate-300 bg-transparent px-1 py-1 text-sm dark:border-slate-700">
                       <option value="online">Online</option><option value="busy">Ocupado</option><option value="offline">Offline</option>
                     </select>
                     <button className="btn-secondary min-h-8 px-2 text-sm">OK</button>
-                  </form>
+                  </form>}
                 </td>
+                {isAdmin && <td className="td"><details><summary className="cursor-pointer text-blue-600">{inactive ? "Reativar" : "Inativar"}</summary>
+                  <ActionForm action={setDriverActive} submitLabel={inactive ? "Confirmar reativação" : "Confirmar inativação"} className="mt-2 space-y-2">
+                    {!inactive && <p className="text-sm">O motorista perde acesso às corridas. As corridas existentes devem ser verificadas e, se necessário, reatribuídas.</p>}
+                    <input type="hidden" name="id" value={d.id} /><input type="hidden" name="active" value={inactive ? "true" : "false"} />
+                  </ActionForm></details></td>}
               </tr>
             ))}
-            {!data?.length && <tr><td className="td text-slate-500" colSpan={4}>Nenhum motorista.</td></tr>}
+            {!error && !data?.length && <tr><td className="td text-slate-500" colSpan={isAdmin ? 6 : 5}>Nenhum motorista {inactive ? "inativo" : "ativo"}.</td></tr>}
           </tbody>
         </table>
       </div>
-      <Pagination page={page} pageSize={PAGE_SIZE} total={count ?? 0} basePath="/motoristas" params={{ q }} />
+      <Pagination page={page} pageSize={PAGE_SIZE} total={count ?? 0} basePath="/motoristas" params={{ q, ...(inactive ? { status: "inativos" } : {}) }} />
     </>
   );
 }

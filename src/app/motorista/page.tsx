@@ -3,21 +3,22 @@ import Link from "next/link";
 import { Phone, MessageCircle, Navigation, MapPin } from "lucide-react";
 import { getProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { logout } from "@/app/actions/auth";
-import { respondAssignment, driverRideStatus, setMyAvailability } from "@/app/actions/driver";
+import { driverLogout, respondAssignment, driverRideStatus, setMyAvailability } from "@/app/actions/driver";
 import { formatBRL } from "@/lib/money";
 import { formatDateTime } from "@/lib/dates";
 import { AVAILABILITY } from "@/lib/labels";
-import { StatusBadge } from "@/components/common";
+import { Pagination, StatusBadge } from "@/components/common";
 import { PushToggle } from "@/components/push-toggle";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
+import { DriverRouteMap } from "@/components/driver-route-map";
 
 type Ride = {
   id: string; passenger_name: string; passenger_phone: string | null; origin: string; destination: string;
   scheduled_at: string; driver_payout_cents: number | null; notes: string | null; status: string;
 };
 const RIDE_COLS = "id, passenger_name, passenger_phone, origin, destination, scheduled_at, driver_payout_cents, notes, status";
-const RT_TABLES = ["rides", "ride_assignments"];
+const RT_TABLES = ["rides", "ride_assignments", "ride_messages"];
+const PAGE_SIZE = 20;
 
 function waNumber(s: string) { const d = s.replace(/\D/g, ""); return d.length <= 11 ? `55${d}` : d; }
 
@@ -54,32 +55,41 @@ function RideInfo({ r, full }: { r: Ride; full: boolean }) {
   );
 }
 
-export default async function Motorista() {
+export default async function Motorista({ searchParams }: PageProps<"/motorista">) {
   const p = await getProfile();
-  if (!p) redirect("/login");
-  if (p.role !== "driver") redirect("/painel");
+  if (!p || !p.active) redirect("/motorista/login");
+  if (p.role !== "driver") redirect("/motorista/login?conta=equipe");
 
   const supabase = await createClient();
-  const { data: me } = await supabase.from("drivers").select("id, availability").eq("profile_id", p.id).maybeSingle();
-  const [offers, rides, done] = await Promise.all([
-    supabase.from("ride_assignments").select(`id, sent_at, ride:rides(${RIDE_COLS})`).eq("status", "sent").order("sent_at"),
-    supabase.from("rides").select(RIDE_COLS).in("status", ["scheduled", "confirmed", "in_progress"]).order("scheduled_at").limit(50),
-    supabase.from("rides").select(RIDE_COLS).eq("status", "completed").order("scheduled_at", { ascending: false }).limit(5),
+  const pageValue = Number((await searchParams).page);
+  const page = Number.isSafeInteger(pageValue) && pageValue > 0 && pageValue <= 100000 ? pageValue : 1;
+  const { data: me, error: meError } = await supabase.from("drivers").select("id, availability, active").eq("profile_id", p.id).maybeSingle();
+  if (meError) return <main className="mx-auto max-w-md p-4"><p role="alert" className="card text-red-600">Não foi possível carregar seu cadastro. Tente novamente.</p></main>;
+  if (!me?.active) return <main className="mx-auto max-w-md space-y-4 p-4"><p className="card">Seu acesso ainda não está vinculado a um motorista ativo. Entre em contato com a base.</p>{!me && <><Link href="/motorista/mensagens" className="btn-secondary">Mensagens com a base</Link><Link href="/motorista/telefone" className="btn-secondary">Cadastrar WhatsApp</Link></>}<form action={driverLogout}><button className="btn-secondary">Sair</button></form></main>;
+  const [offers, rides, assignments] = await Promise.all([
+    supabase.from("ride_assignments").select(`id, sent_at, ride:rides(${RIDE_COLS})`).eq("driver_id", me.id).eq("status", "sent").order("sent_at"),
+    supabase.from("rides").select(RIDE_COLS, { count: "exact" }).eq("driver_id", me.id).in("status", ["scheduled", "confirmed", "in_progress"])
+      .order("scheduled_at").range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
+    supabase.from("ride_assignments").select("id, ride_id, status").eq("driver_id", me.id).in("status", ["sent", "accepted"]).order("sent_at", { ascending: false }),
   ]);
-  const offerRows = (offers.data ?? []) as unknown as { id: string; ride: Ride }[];
+  const offerRows = (offers.data ?? []).flatMap((offer) => {
+    const ride = Array.isArray(offer.ride) ? offer.ride[0] : offer.ride;
+    return ride ? [{ id: offer.id, ride }] : [];
+  });
   const offered = new Set(offerRows.map((o) => o.ride.id));
-  const mine = ((rides.data ?? []) as Ride[]).filter((r) => !offered.has(r.id));
-  const availability = me?.availability ?? "offline";
+  const mine = (rides.data ?? []).filter((r) => !offered.has(r.id));
+  const conversations = new Map((assignments.data ?? []).map((a) => [a.ride_id, a.id]));
+  const availability = me.availability;
 
   return (
     <main className="mx-auto max-w-md space-y-5 p-4 pb-16">
-      <RealtimeRefresh tables={RT_TABLES} />
+      <RealtimeRefresh tables={RT_TABLES} poll={30000} />
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Olá, {p.full_name}</h1>
           <p className="text-sm text-slate-500">Você está: <b>{AVAILABILITY[availability]?.label ?? availability}</b></p>
         </div>
-        <form action={logout}><button className="btn-secondary">Sair</button></form>
+        <form action={driverLogout}><button className="btn-secondary">Sair</button></form>
       </header>
 
       <form action={setMyAvailability} className="grid grid-cols-3 gap-2">
@@ -89,7 +99,13 @@ export default async function Motorista() {
       </form>
 
       <PushToggle />
-      <Link href="/motorista/financeiro" className="btn-secondary w-full">Meu financeiro</Link>
+      <nav className="grid grid-cols-2 gap-2" aria-label="Menu do motorista">
+        <Link href="/motorista/mensagens" className="btn-primary col-span-2"><MessageCircle size={18} /> Mensagens com a base</Link>
+        <Link href="/motorista/historico" className="btn-secondary">Histórico</Link>
+        <Link href="/motorista/financeiro" className="btn-secondary">Meu financeiro</Link>
+        <Link href="/motorista/telefone" className="btn-secondary col-span-2">Meu WhatsApp</Link>
+      </nav>
+      {(offers.error || rides.error || assignments.error || offerRows.length !== (offers.data?.length ?? 0)) && <p role="alert" className="card text-sm text-red-600">Não foi possível carregar todas as corridas. Atualize a página ou contate a base.</p>}
 
       {offerRows.length > 0 && (
         <section className="space-y-3">
@@ -97,6 +113,7 @@ export default async function Motorista() {
           {offerRows.map((o) => (
             <div key={o.id} className="card space-y-4 border-blue-400 dark:border-blue-600">
               <RideInfo r={o.ride} full={false} />
+              <Link href={`/motorista/mensagens/${o.id}`} className="btn-secondary w-full"><MessageCircle size={18} /> Mensagens com a base</Link>
               <form action={respondAssignment}>
                 <input type="hidden" name="assignment_id" value={o.id} />
                 <button name="accept" value="true" className="btn-primary w-full">Aceitar corrida</button>
@@ -121,6 +138,8 @@ export default async function Motorista() {
         {mine.map((r) => (
           <div key={r.id} className="card space-y-4">
             <RideInfo r={r} full={r.status !== "scheduled"} />
+            {["confirmed", "in_progress"].includes(r.status) && assignments.data?.some((assignment) => assignment.ride_id === r.id && assignment.status === "accepted") && <DriverRouteMap rideId={r.id} />}
+            {conversations.get(r.id) && <Link href={`/motorista/mensagens/${conversations.get(r.id)}`} className="btn-secondary w-full"><MessageCircle size={18} /> Mensagens com a base</Link>}
             {r.status === "confirmed" && (
               <form action={driverRideStatus}>
                 <input type="hidden" name="ride_id" value={r.id} />
@@ -136,19 +155,9 @@ export default async function Motorista() {
             {r.status === "scheduled" && <p className="text-sm text-slate-500">Aguardando confirmação da base.</p>}
           </div>
         ))}
+        {!rides.error && (rides.count ?? 0) > PAGE_SIZE && <Pagination page={page} pageSize={PAGE_SIZE} total={rides.count ?? 0} basePath="/motorista" params={{}} />}
       </section>
 
-      {(done.data?.length ?? 0) > 0 && (
-        <section className="space-y-2">
-          <h2 className="font-semibold">Últimas realizadas</h2>
-          {(done.data as Ride[]).map((r) => (
-            <div key={r.id} className="card flex justify-between text-sm">
-              <span>{r.passenger_name}<br /><span className="text-slate-500">{formatDateTime(r.scheduled_at)}</span></span>
-              <b>{formatBRL(r.driver_payout_cents)}</b>
-            </div>
-          ))}
-        </section>
-      )}
     </main>
   );
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { LayoutDashboard, Car, Users, UserCog, Repeat, Wallet, BarChart3, Inbox, ScrollText, Settings, UserCheck, Moon, Sun, LogOut } from "lucide-react";
+import { LayoutDashboard, Car, Users, UserCog, Repeat, Wallet, BarChart3, Inbox, ScrollText, Settings, UserCheck, Moon, Sun, LogOut, MessageCircle, ShieldCheck } from "lucide-react";
 import { logout } from "@/app/actions/auth";
 import { ROLE_LABEL } from "@/lib/labels";
 
@@ -11,9 +11,11 @@ const items = [
   { href: "/painel", label: "Painel", icon: LayoutDashboard },
   { href: "/corridas", label: "Corridas", icon: Car },
   { href: "/entrada", label: "Entrada", icon: Inbox },
+  { href: "/mensagens", label: "Mensagens", icon: MessageCircle },
   { href: "/recorrentes", label: "Recorrentes", icon: Repeat },
   { href: "/clientes", label: "Clientes", icon: Users },
   { href: "/motoristas", label: "Motoristas", icon: UserCog },
+  { href: "/administrador", label: "Administrador", icon: ShieldCheck },
   { href: "/financeiro", label: "Financeiro", icon: Wallet, adminOnly: true },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3, adminOnly: true },
   { href: "/usuarios", label: "Usuários", icon: UserCheck, adminOnly: true },
@@ -21,10 +23,10 @@ const items = [
   { href: "/configuracoes", label: "Configurações", icon: Settings, adminOnly: true },
 ];
 
-export function Sidebar({ name, role }: { name: string; role: string }) {
+export function Sidebar({ name, role, adminAccess }: { name: string; role: string; adminAccess: boolean }) {
   const path = usePathname();
   const { resolvedTheme, setTheme } = useTheme();
-  const visible = items.filter((i) => !i.adminOnly || role === "admin");
+  const visible = items.filter((i) => !i.adminOnly || adminAccess);
   return (
     <aside className="border-b border-slate-200 bg-white md:sticky md:top-0 md:h-screen md:w-60 md:shrink-0 md:border-b-0 md:border-r dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center justify-between p-3 md:block md:p-4">

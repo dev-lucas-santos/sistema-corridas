@@ -24,8 +24,22 @@ export async function requireStaff(): Promise<Profile> {
   return p;
 }
 
+export const hasAdminAccess = cache(async (): Promise<boolean> => {
+  if (BYPASS_AUTH) return true;
+  if (process.env.ADMIN_SESSION_ACCESS_ENABLED !== "1") {
+    const profile = await getProfile();
+    return profile?.active === true && profile.role === "admin";
+  }
+  const { data, error } = await (await createClient()).rpc("admin_session_active");
+  if (error) {
+    console.error("Não foi possível verificar a sessão administrativa", error.code);
+    return false;
+  }
+  return data === true;
+});
+
 export async function requireAdmin(): Promise<Profile> {
   const p = await requireStaff();
-  if (p.role !== "admin") redirect("/painel");
+  if (!(await hasAdminAccess())) redirect("/administrador");
   return p;
 }

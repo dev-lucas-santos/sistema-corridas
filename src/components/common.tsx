@@ -25,12 +25,12 @@ export function PageHeader({ title, children }: { title: string; children?: Reac
   );
 }
 
-export function Pagination({ page, pageSize, total, basePath, params }: { page: number; pageSize: number; total: number; basePath: string; params: Record<string, string | undefined> }) {
+export function Pagination({ page, pageSize, total, basePath, params, pageParam = "page" }: { page: number; pageSize: number; total: number; basePath: string; params: Record<string, string | undefined>; pageParam?: string }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const href = (p: number) => {
     const sp = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => v && sp.set(k, v));
-    sp.set("page", String(p));
+    sp.set(pageParam, String(p));
     return `${basePath}?${sp}`;
   };
   return (

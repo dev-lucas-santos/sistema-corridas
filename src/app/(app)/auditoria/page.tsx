@@ -5,10 +5,11 @@ import { formatDateTime } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
 
 const PAGE_SIZE = 30;
-const ACTION: Record<string, string> = { insert: "Criou", update: "Alterou", delete: "Excluiu" };
+const ACTION: Record<string, string> = { insert: "Criou", update: "Alterou", delete: "Excluiu", admin_unlock: "Liberou acesso administrativo" };
 const TABLES: Record<string, string> = {
   rides: "Corridas", clients: "Clientes", drivers: "Motoristas", payments: "Pagamentos", payment_closings: "Fechamentos",
   adjustments: "Ajustes", profiles: "Usuários", settings: "Configurações", driver_payout_settings: "Repasse", inbound_messages: "Entrada",
+  admin_access_sessions: "Acesso administrativo",
 };
 
 const CHANGED_IGNORE = new Set(["updated_at"]);
